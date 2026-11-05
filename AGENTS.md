@@ -32,7 +32,5 @@ cargo clippy --workspace --all-targets   # 零警告是硬标准
 
 ## 环境相关的坑
 
-- 本机 UDP:69 被 Tftpd64 占用——监听器测试用 1069 或随机端口。
 - Windows 本地交叉 musl 需 `--config 'target.<t>.linker="rust-lld"'`（无 cc）；CI 的 ubuntu runner 不需要。
-- 真机测试台架：COM3 串口接 OpenWrt（aarch64，192.168.21.46），PC 为 192.168.21.72，经 serial-studio MCP 驱动；设备 tftp 客户端支持 `--option "blksize N"`。
 - 发布流程：推 `v*` tag（必须等于 workspace version），工作流跑测试闸门→版本守卫→5 目标构建（含 musl 静态）→草稿 release 待人工核对。

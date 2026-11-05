@@ -1,0 +1,8 @@
+# musl 交叉链接固定用 rust-lld（随 rustup 分发，全宿主可用）：
+# 宿主 cc 无法链接异构 ELF——ubuntu CI 的 x86_64 ld 不认 aarch64 的
+# --fix-cortex-a53-843419，Windows 干脆没有 cc。
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"
