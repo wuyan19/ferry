@@ -38,7 +38,7 @@ struct SharedArgs {
     sandbox_root: PathBuf,
 
     /// Sandbox quota in bytes.
-    #[arg(long, global = true, default_value_t = 1024 * 1024 * 1024)]
+    #[arg(long, global = true, default_value_t = 5 * 1024 * 1024 * 1024)]
     quota_bytes: u64,
 
     /// Max concurrent transfer tasks.

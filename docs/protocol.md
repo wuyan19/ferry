@@ -107,7 +107,7 @@ MCP 模式（§9）下，同一组操作以 `tools/call` 工具形式暴露，�
   "jsonrpc":"2.0","id":2,
   "result":{
     "uptime_s":1423,
-    "sandbox":{"root":"/var/lib/tftp-sandbox","used_bytes":10485760,"quota_bytes":1073741824},
+    "sandbox":{"root":"/var/lib/tftp-sandbox","used_bytes":10485760,"quota_bytes":5368709120},
     "listeners":[{"listener_id":"L-01","port":69,"mode":["read"],"root":"/firmware"}],
     "active_tasks":["T-7f3a","T-7f3b"]
   }

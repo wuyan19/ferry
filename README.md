@@ -54,7 +54,7 @@ Spawn `ferry serve` 后首条 stdout 消息为 `event.server_ready`（自带 cap
 ferry serve|mcp [--sandbox-root <dir>] [--quota-bytes <n>] [--max-concurrent-tasks <n>] [--log-level <level>]
 ```
 
-- 沙箱根默认 `~/.ferry/sandbox`（自动创建），配额默认 1 GiB
+- 沙箱根默认 `~/.ferry/sandbox`（自动创建），配额默认 5 GiB
 - 日志走 stderr，stdout 仅协议消息
 - 监听器绑定 69 端口在 Linux 需要 CAP_NET_BIND_SERVICE（Windows 无限制）
 - `stdin EOF` 即优雅关闭；进行中的任务有 5s 收尾窗口
