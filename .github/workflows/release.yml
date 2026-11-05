@@ -1,0 +1,97 @@
+name: Release
+
+# ferry 为纯 Rust 单二进制:cargo 构建 → gh 直传 draft release,人工核对后发布。
+# 触发:推 v* tag 或 Actions 页手动 dispatch(填 tag)。
+# 目标选择:Linux 用 musl 静态(设备/路由器/容器即拷即用,不挑 libc),
+# Windows/macOS 各打原生;依赖全为纯 Rust(无 ring/openssl),musl 交叉无需 musl-gcc。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  # 发布闸门:全部测试通过才允许出产物
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-targets
+
+  # 先单独建 draft release(幂等),矩阵各腿只管上传——避免多腿并发 create 竞态。
+  # dispatch 场景输入的 tag 可能尚不存在:gh release create 会以默认分支 HEAD 自动建 tag。
+  prepare:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard tag == Cargo.toml version
+        run: |
+          set -e
+          ver=$(sed -n '/\[workspace.package\]/,/^\[/p' Cargo.toml | grep -m1 '^version' | cut -d'"' -f2)
+          if [ "v$ver" != "$TAG" ]; then
+            echo "tag $TAG 与 Cargo.toml 版本 $ver 不一致"; exit 1
+          fi
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$TAG" || gh release create "$TAG" --draft \
+            --title "ferry $TAG" \
+            --notes "ferry $TAG — 草稿，发布前请人工核对产物与 sha256。变更见 README / protocol.md。"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 设备/软路由场景优先:x86_64 与 aarch64 静态(测试机 ipq60xx 即 aarch64)
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-musl }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # 文件名带 tag 与 target:设备端多版本共存可辨;每腿自带 .sha256,无跨腿聚合依赖
+      - name: Checksum + upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          ext=""
+          case "${{ matrix.target }}" in *-windows-*) ext=".exe";; esac
+          src="target/${{ matrix.target }}/release/ferry${ext}"
+          out="ferry-$TAG-${{ matrix.target }}${ext}"
+          cp "$src" "$out"
+          sha256sum "$out" > "$out.sha256"
+          ls -la "$out"
+          gh release upload --clobber "$TAG" "$out" "$out.sha256"
