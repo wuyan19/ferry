@@ -2,6 +2,13 @@
 resolver = "2"
 members = ["crates/ferry-tftp", "crates/ferry-core", "crates/ferry"]
 
+# 发布产物优化：thin LTO + 单编译单元 + 去符号，体积减半、运行更快；
+# 长驻服务不启用 panic = "abort"（panic 展开让单任务失败不拖垮进程）。
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
