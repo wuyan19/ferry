@@ -19,8 +19,21 @@ schemars = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# 在线升级：ureq 拉 manifest + 下载；self-replace 替换运行中的自身；semver 版本
+# 比较；sha2 完整性；minisign-verify Ed25519 验签（verify-only 零依赖）。
+# TLS 全纯 Rust：ureq 关默认 provider（默认的 ring 是 C/汇编，musl 交叉需要
+# C 工具链，破坏零依赖交叉），注入 rustls-rustcrypto provider——通道安全不
+# 依赖 TLS 栈强度，真实性由 minisign 端到端签名兜底（见 update.rs 安全边界）。
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-rustcrypto = "0.0.2-alpha"
+semver = "1"
+self-replace = "1"
+minisign-verify = "0.2"
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-sha2 = { workspace = true }
 base64 = { workspace = true }
+# minisign 完整实现（生成密钥对/签名）：只在开发与 CI 编译，不进 release 依赖树
+minisign = "0.9"

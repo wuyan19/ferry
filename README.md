@@ -31,6 +31,15 @@ curl -fsSL https://raw.githubusercontent.com/wuyan19/ferry/main/install.sh | sh
 
 脚本自动识别架构、下载最新 release 产物并校验 sha256，安装到 `~/.ferry/bin`。环境变量：`FERRY_BIN_DIR` 改安装目录、`FERRY_VERSION=v0.1.0` 装指定版本、`FERRY_MIRROR=https://ghproxy.net/` 加速受限网络（sh：`curl -fsSL … | FERRY_MIRROR=https://ghproxy.net/ sh`）。
 
+## 自升级
+
+```
+ferry upgrade           # 检查并升级到最新版
+ferry upgrade --check   # 只检查，不安装
+```
+
+安全模型（纵深三层）：HTTPS 通道 → sha256 完整性 → **minisign Ed25519 签名真实性**。更新清单由 CI 用私钥签名（私钥只存在于 GitHub Secrets），客户端只内嵌公钥——GitHub 账号被盗、仓库被攻破或镜像被篡改，产不出能通过验签的更新。`FERRY_MIRROR` 镜像前缀因此是安全的：传输不可信、签名可信。替换运行中的二进制由 [self-replace](https://crates.io/crates/self-replace) 处理（Unix inode 语义 / Windows rename 舞步）。
+
 ## 构建与测试
 
 ```bash

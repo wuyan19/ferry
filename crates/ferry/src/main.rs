@@ -2,11 +2,13 @@
 //!
 //! `ferry serve`（默认）= NDJSON JSON-RPC 前端（protocol.md）
 //! `ferry mcp`          = MCP stdio 前端（protocol.md §9）
+//! `ferry upgrade`      = 在线自升级（sha256 + minisign 验签 + self-replace）
 //!
 //! stdout 只走协议消息，日志一律 stderr；启动失败 = stderr + 非零退出、不写 stdout。
 
 mod frontend;
 mod schema;
+mod update;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -17,18 +19,24 @@ use ferry_core::api::{Api, ApiConfig};
 #[command(name = "ferry", version, about = "Agent-oriented file transfer tool (TFTP first)")]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Frontend>,
+    command: Option<Command>,
 
     #[command(flatten)]
     args: SharedArgs,
 }
 
 #[derive(Subcommand)]
-enum Frontend {
+enum Command {
     /// NDJSON JSON-RPC 2.0 frontend over stdio (protocol.md)
     Serve,
     /// MCP stdio frontend (protocol.md §9)
     Mcp,
+    /// Self-update from GitHub Releases (signed manifest, sha256 verified).
+    Upgrade {
+        /// Only report available updates; do not install.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(clap::Args)]
@@ -70,6 +78,19 @@ fn main() {
 }
 
 async fn run(cli: Cli) -> i32 {
+    // upgrade 不需要沙箱/前端，在 Api 初始化前分流（同步阻塞一次调用即可）
+    if let Some(Command::Upgrade { check }) = &cli.command {
+        return match update::upgrade(*check) {
+            Ok(msg) => {
+                println!("{msg}");
+                0
+            }
+            Err(e) => {
+                eprintln!("ferry upgrade: {e}");
+                1
+            }
+        };
+    }
     let cfg = ApiConfig {
         sandbox_root: cli.args.sandbox_root.clone(),
         quota_bytes: cli.args.quota_bytes,
@@ -86,8 +107,9 @@ async fn run(cli: Cli) -> i32 {
             return 2;
         }
     };
-    match cli.command.unwrap_or(Frontend::Serve) {
-        Frontend::Serve => frontend::ndjson::run(api).await,
-        Frontend::Mcp => frontend::mcp::run(api).await,
+    match cli.command.unwrap_or(Command::Serve) {
+        Command::Serve => frontend::ndjson::run(api).await,
+        Command::Mcp => frontend::mcp::run(api).await,
+        Command::Upgrade { .. } => unreachable!("handled before Api init"),
     }
 }

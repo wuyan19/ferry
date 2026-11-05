@@ -96,3 +96,143 @@ jobs:
           sha256sum "$out" > "$out.sha256"
           ls -la "$out"
           gh release upload --clobber "$TAG" "$out" "$out.sha256"
+
+  # 更新清单:等 build 五腿资产全部上传后,从 draft release 下载它们计算
+  # sha256 + minisign 签名,拼出信封式 update-manifest.json({payload, signature})
+  # 再传回同一 release。客户端(src/update.rs)验签后才解析 payload。
+  # 平台 key = 编译目标三元组,与 update.rs 的 PLATFORM_KEY(build.rs 注入)是硬约定。
+  # 注意 draft release 不会被 releases/latest 命中——发布后必须 publish,
+  # 否则所有已安装客户端都查不到更新。
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: manifest
+
+      - name: Cargo.toml version must match tag
+        run: |
+          ver=$(sed -n '/\[workspace.package\]/,/^\[/p' Cargo.toml | grep -m1 '^version' | cut -d'"' -f2)
+          if [ "v$ver" != "$TAG" ]; then
+            echo "::error::Cargo.toml ($ver) 与 tag ($TAG) 不一致——manifest 版本号取自 tag,客户端版本比较会错乱"
+            exit 1
+          fi
+
+      # 签名是强制步骤:secrets 缺失直接 fail(无签名的 manifest 会被客户端拒绝,
+      # 静默跳过只是把失败推迟到用户端)。口令经临时文件而非 argv 传给签名工具
+      # ——GitHub 的 secret 自动 redaction 不覆盖子进程 argv。
+      - name: Materialize signing key
+        env:
+          UPDATE_MINISIGN_KEY: ${{ secrets.UPDATE_MINISIGN_KEY }}
+          UPDATE_MINISIGN_PASSWORD: ${{ secrets.UPDATE_MINISIGN_PASSWORD }}
+        run: |
+          if [ -z "$UPDATE_MINISIGN_KEY" ]; then
+            echo "::error::缺少 secret UPDATE_MINISIGN_KEY。生成:cargo run --example keygen_update -- --password=<口令>,把 .sign/minisign.key 全文与口令配到 UPDATE_MINISIGN_KEY / UPDATE_MINISIGN_PASSWORD"
+            exit 1
+          fi
+          if [ -z "$UPDATE_MINISIGN_PASSWORD" ]; then
+            echo "::error::缺少 secret UPDATE_MINISIGN_PASSWORD(空口令也需显式配空字符串)"
+            exit 1
+          fi
+          printf '%s' "$UPDATE_MINISIGN_KEY" > "$HOME/.ferry-update.key"
+          printf '%s' "$UPDATE_MINISIGN_PASSWORD" > "$HOME/.ferry-update.pwd"
+          chmod 600 "$HOME/.ferry-update.key" "$HOME/.ferry-update.pwd"
+          # 指纹诊断(不泄露内容):核对 secret 是否粘贴完整
+          echo "key: $(wc -l < "$HOME/.ferry-update.key") lines; sha256=$(sha256sum "$HOME/.ferry-update.key" | cut -c1-16)"
+          echo "pwd: $(wc -c < "$HOME/.ferry-update.pwd") bytes"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "$TAG" -R "$GITHUB_REPOSITORY" --pattern 'ferry-*' --dir assets
+
+      - name: Build signing tool
+        run: cargo build --release --example sign_update
+
+      - name: Build signed update-manifest.json
+        run: |
+          python3 - <<'EOF'
+          import hashlib, json, os, subprocess, sys
+
+          tag = os.environ["TAG"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          sign_tool = "target/release/examples/sign_update"
+          key_path = os.path.expanduser("~/.ferry-update.key")
+          pwd_path = os.path.expanduser("~/.ferry-update.pwd")
+
+          def sign(path):
+              # 返回 minisign .sig 全文(多行)。口令经 --password-file,不进 argv。
+              r = subprocess.run(
+                  [sign_tool, "--key", key_path, "--password-file", pwd_path, path],
+                  capture_output=True, text=True,
+              )
+              if r.returncode != 0:
+                  print(f"sign_update 失败(exit {r.returncode}):{r.stderr}", file=sys.stderr)
+                  raise SystemExit(1)
+              return r.stdout
+
+          def asset(name):
+              path = os.path.join("assets", name)
+              h = hashlib.sha256()
+              with open(path, "rb") as f:
+                  for chunk in iter(lambda: f.read(1 << 20), b""):
+                      h.update(chunk)
+              return {
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{name}",
+                  "size": os.path.getsize(path),
+                  "sha256": h.hexdigest(),
+                  "signature": sign(path),
+              }
+
+          version = tag[1:] if tag.startswith("v") else tag
+          targets = [
+              "x86_64-unknown-linux-musl",
+              "aarch64-unknown-linux-musl",
+              "x86_64-pc-windows-msvc",
+              "aarch64-apple-darwin",
+              "x86_64-apple-darwin",
+          ]
+          platforms = {}
+          for t in targets:
+              ext = ".exe" if "-windows-" in t else ""
+              platforms[t] = asset(f"ferry-{tag}-{t}{ext}")
+
+          # payload 是「内层 manifest 的 JSON 字符串」:签名对这段字符串的字节,
+          # 客户端验签原文后再 parse(两端字节确定一致)。
+          payload = json.dumps({
+              "version": version,
+              "notes_url": f"https://github.com/{repo}/releases/tag/{tag}",
+              "platforms": platforms,
+          }, ensure_ascii=False)
+          with open("payload.json", "w") as f:
+              f.write(payload)
+          envelope = {"payload": payload, "signature": sign("payload.json")}
+          with open("update-manifest.json", "w") as f:
+              json.dump(envelope, f, indent=2)
+          print("signed manifest built for", len(platforms), "platforms")
+          EOF
+
+      - name: Shred signing key
+        if: always()
+        run: rm -f "$HOME/.ferry-update.key" "$HOME/.ferry-update.pwd" payload.json
+
+      - name: Upload update-manifest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" update-manifest.json --clobber --repo "$GITHUB_REPOSITORY"
+
+      # smoke 自检:把刚上传的 manifest 下载回来,走客户端同一条验签路径
+      # (verify_manifest example 与 check_latest 共用 parse_signed_manifest)。
+      # 在这里失败好过发布后所有客户端静默拒绝更新——特别是 secret 与仓库内
+      # 公钥不配对的场景。
+      - name: Smoke verify manifest (client path)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" --pattern update-manifest.json --clobber
+          cargo run --release --example verify_manifest -- update-manifest.json
