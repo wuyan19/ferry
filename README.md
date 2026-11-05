@@ -15,6 +15,22 @@
 - **任务系统** `task.*`：状态查询 / 等待 / 幂等取消
 - **TFTP 选项协商**：blksize（RFC 2348）、tsize / timeout（RFC 2349）、windowsize（RFC 7440）；仅 octet 模式
 
+## 安装
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/wuyan19/ferry/main/install.ps1 | iex
+```
+
+Linux / macOS（含路由器等嵌入式 Linux——产物为 musl 静态，零依赖）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wuyan19/ferry/main/install.sh | sh
+```
+
+脚本自动识别架构、下载最新 release 产物并校验 sha256，安装到 `~/.ferry/bin`。环境变量：`FERRY_BIN_DIR` 改安装目录、`FERRY_VERSION=v0.1.0` 装指定版本、`FERRY_MIRROR=https://ghproxy.net/` 加速受限网络（sh：`curl -fsSL … | FERRY_MIRROR=https://ghproxy.net/ sh`）。
+
 ## 构建与测试
 
 ```bash

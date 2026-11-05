@@ -8,6 +8,7 @@
 | `file.import` | 大文件入沙箱免拷贝 | 从宿主机路径导入，同卷用硬链接实现零拷贝；跨卷回退为复制 | 候选 |
 | 进度通知配置 | 部分 MCP 客户端把 `notifications/message` 注入上下文，长传输事件多 | listener/transfer 增加通知间隔或开关参数 | 候选 |
 | SFTP / SCP 传输方式 | 覆盖需要认证与加密的场景 | 在 ferry-core 增加并列的传输编排，复用任务/沙箱/事件模型 | 候选 |
+| 包管理器分发（winget / scoop / Homebrew tap） | 免脚本安装、获得自动更新 | release 工作流产出清单并提交各仓库；winget 需要 manifest PR | 候选 |
 | crate 发布与 CI | 供其他项目复用 `ferry-tftp` 引擎 | 发布到 crates.io；GitHub Actions 跑 test + clippy | 候选 |
 
 ## MCP Streamable HTTP 前端
