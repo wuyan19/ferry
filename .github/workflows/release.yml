@@ -37,6 +37,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - name: Guard tag == Cargo.toml version
         run: |
           set -e
