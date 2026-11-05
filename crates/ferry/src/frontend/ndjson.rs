@@ -156,6 +156,10 @@ async fn dispatch(api: &Api, method: &str, params: Value, id: &Value) -> Value {
         "file.write" => typed!(FileWriteParams, api.file_write),
         "file.read" => typed!(FileReadParams, api.file_read),
         "file.delete" => typed!(FileDeleteParams, api.file_delete),
+        "transfer.fetch" | "transfer.push" => transfer_arm(api, method, params, id).await,
+        "task.status" => typed!(TaskStatusParams, api.task_status),
+        "task.wait" => typed!(TaskWaitParams, api.task_wait),
+        "task.cancel" => typed!(TaskCancelParams, api.task_cancel),
         _ => err_response(
             id.clone(),
             &FerryError::new(ErrCode::MethodNotFound, format!("unknown method: {method}"))
@@ -171,6 +175,39 @@ fn parse_params<T: DeserializeOwned>(method: &str, params: Value, id: &Value) ->
             &FerryError::invalid_params(format!("{method}: {e}")),
         )
     })
+}
+
+/// transfer.fetch / transfer.push：wait:true 在此阻塞到终态或 timeout_ms。
+/// 失败也是 result（§4.3 错误分层）。
+async fn transfer_arm(api: &Api, method: &str, params: Value, id: &Value) -> Value {
+    let p: TransferParams = match parse_params(method, params, id) {
+        Ok(p) => p,
+        Err(resp) => return resp,
+    };
+    let wait = p.wait.unwrap_or(false); // 自定义协议默认 false；MCP 前端默认 true（§9.3）
+    let start = if method == "transfer.fetch" {
+        api.transfer_fetch(p.clone()).await
+    } else {
+        api.transfer_push(p.clone()).await
+    };
+    match start {
+        Ok(start) => {
+            let mut snapshot = start.snapshot;
+            let terminal = snapshot.state.is_terminal();
+            if wait && !terminal {
+                let timeout = p.timeout_ms.filter(|&ms| ms > 0).map(std::time::Duration::from_millis);
+                match api.task_wait_raw(&start.task_id, timeout).await {
+                    Ok(mut s) => {
+                        s.cached = snapshot.cached; // 缓存标记跟随起点
+                        snapshot = s;
+                    }
+                    Err(e) => return err_response(id.clone(), &e),
+                }
+            }
+            ok_response(id.clone(), &snapshot)
+        }
+        Err(e) => err_response(id.clone(), &e),
+    }
 }
 
 fn ok_response(id: Value, result: &impl serde::Serialize) -> Value {

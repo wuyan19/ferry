@@ -94,7 +94,7 @@ pub async fn fetch_to_writer(
     cfg: ClientConfig,
     sink: &mut (impl AsyncWrite + Unpin),
     cancel: &CancellationToken,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 ) -> Result<TransferReport, TftpError> {
     let sess = Session::bind_ephemeral(server).await?;
     let requested = options::client_request(cfg.block_size, cfg.window_size, cfg.timeout_ms, Some(0));
@@ -115,14 +115,14 @@ pub async fn push_from_reader(
     source: &mut (impl AsyncRead + Unpin),
     len: u64,
     cancel: &CancellationToken,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 ) -> Result<TransferReport, TftpError> {
     let sess = Session::bind_ephemeral(server).await?;
     let requested = options::client_request(cfg.block_size, cfg.window_size, cfg.timeout_ms, Some(len));
     let req = Request { path: remote_path.to_string(), mode: Mode::Octet, options: requested.clone() };
     let (mut sess, mut opts, _pending) = handshake(sess, server, Packet::Wrq(req), requested, &cfg).await?;
-    let total_bytes = opts.tsize;
+    let total_bytes = Some(len);
     opts.retries = cfg.retries;
-    let bytes = send_data(&mut sess, &opts, source, cancel, progress).await?;
+    let bytes = send_data(&mut sess, &opts, Some(len), source, cancel, progress).await?;
     Ok(TransferReport { bytes, total_bytes })
 }

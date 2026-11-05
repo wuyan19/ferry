@@ -6,6 +6,7 @@ license.workspace = true
 description = "ferry 核心：沙箱、文件操作、任务管理、监听器与错误模型（前端无关）"
 
 [dependencies]
+ferry-tftp = { path = "../ferry-tftp" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }
@@ -19,3 +20,5 @@ ipnet = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

@@ -40,13 +40,13 @@ async fn fetch_via_own_server_with_options() {
         async move {
             let (req, from) = recv_request(&main).await;
             let mut src = std::io::Cursor::new(data.clone());
-            serve_read(from, req, &mut src, data.len() as u64, &ServerLimits::default(), &cancel, &mut |_| {})
+            serve_read(from, req, &mut src, data.len() as u64, &ServerLimits::default(), &cancel, &mut |_, _| {})
                 .await
         }
     });
 
     let mut sink = Vec::new();
-    let report = fetch_to_writer(addr, "fw.bin", fast_cfg(512, 4), &mut sink, &cancel, &mut |_| {}).await.unwrap();
+    let report = fetch_to_writer(addr, "fw.bin", fast_cfg(512, 4), &mut sink, &cancel, &mut |_, _| {}).await.unwrap();
     assert_eq!(sink, data);
     assert_eq!(report.bytes, data.len() as u64);
     assert_eq!(report.total_bytes, Some(data.len() as u64)); // tsize 协商生效
@@ -65,7 +65,7 @@ async fn push_via_own_server_with_options() {
         async move {
             let (req, from) = recv_request(&main).await;
             let mut sink = Vec::new();
-            let report = serve_write(from, req, &mut sink, &ServerLimits::default(), &cancel, &mut |_| {})
+            let report = serve_write(from, req, &mut sink, &ServerLimits::default(), &cancel, &mut |_, _| {})
                 .await
                 .unwrap();
             (sink, report)
@@ -73,7 +73,7 @@ async fn push_via_own_server_with_options() {
     });
 
     let mut src = std::io::Cursor::new(data.clone());
-    let report = push_from_reader(addr, "cfg.bin", fast_cfg(1024, 2), &mut src, data.len() as u64, &cancel, &mut |_| {})
+    let report = push_from_reader(addr, "cfg.bin", fast_cfg(1024, 2), &mut src, data.len() as u64, &cancel, &mut |_, _| {})
         .await
         .unwrap();
     assert_eq!(report.bytes, data.len() as u64);
@@ -97,7 +97,7 @@ async fn plain_rrq_no_options() {
         let cancel = cancel.clone();
         async move {
             let mut src = std::io::Cursor::new(data);
-            serve_read(peer, req, &mut src, 700, &ServerLimits::default(), &cancel, &mut |_| {}).await
+            serve_read(peer, req, &mut src, 700, &ServerLimits::default(), &cancel, &mut |_, _| {}).await
         }
     });
 
@@ -167,7 +167,7 @@ async fn duplicate_data_is_deduped() {
     });
 
     let mut sink = Vec::new();
-    let report = fetch_to_writer(saddr, "x", fast_cfg(512, 1), &mut sink, &cancel, &mut |_| {}).await.unwrap();
+    let report = fetch_to_writer(saddr, "x", fast_cfg(512, 1), &mut sink, &cancel, &mut |_, _| {}).await.unwrap();
     assert_eq!(sink, vec![b'A'; 512].iter().chain(b"B".iter()).copied().collect::<Vec<_>>());
     assert_eq!(report.bytes, 513);
     evil.await.unwrap();
@@ -187,7 +187,7 @@ async fn remote_error_surfaces() {
         server.send_to(&err.encode(), from).await.unwrap();
     });
     let mut sink = Vec::new();
-    let e = fetch_to_writer(saddr, "missing", fast_cfg(512, 1), &mut sink, &cancel, &mut |_| {}).await.unwrap_err();
+    let e = fetch_to_writer(saddr, "missing", fast_cfg(512, 1), &mut sink, &cancel, &mut |_, _| {}).await.unwrap_err();
     match e {
         TftpError::Remote { code, name, .. } => {
             assert_eq!(code, 1);
@@ -207,7 +207,7 @@ async fn netascii_rejected_with_error_4() {
     let req = Request { path: "cfg".into(), mode: ferry_tftp::Mode::Netascii, options: vec![] };
     let server = tokio::spawn(async move {
         let mut src = std::io::Cursor::new(vec![1u8, 2, 3]);
-        serve_read(peer, req, &mut src, 3, &ServerLimits::default(), &cancel, &mut |_| {}).await
+        serve_read(peer, req, &mut src, 3, &ServerLimits::default(), &cancel, &mut |_, _| {}).await
     });
 
     let mut buf = vec![0u8; 65535];
@@ -233,11 +233,11 @@ async fn empty_file_fetch() {
         async move {
             let (req, from) = recv_request(&main).await;
             let mut src = std::io::Cursor::new(Vec::new());
-            serve_read(from, req, &mut src, 0, &ServerLimits::default(), &cancel, &mut |_| {}).await
+            serve_read(from, req, &mut src, 0, &ServerLimits::default(), &cancel, &mut |_, _| {}).await
         }
     });
     let mut sink = Vec::new();
-    let report = fetch_to_writer(addr, "empty", fast_cfg(512, 1), &mut sink, &cancel, &mut |_| {}).await.unwrap();
+    let report = fetch_to_writer(addr, "empty", fast_cfg(512, 1), &mut sink, &cancel, &mut |_, _| {}).await.unwrap();
     assert!(sink.is_empty());
     assert_eq!(report.bytes, 0);
     server.await.unwrap().unwrap();
@@ -255,14 +255,14 @@ async fn exact_multiple_push_gets_empty_final_block() {
         async move {
             let (req, from) = recv_request(&main).await;
             let mut sink = Vec::new();
-            let report = serve_write(from, req, &mut sink, &ServerLimits::default(), &cancel, &mut |_| {})
+            let report = serve_write(from, req, &mut sink, &ServerLimits::default(), &cancel, &mut |_, _| {})
                 .await
                 .unwrap();
             (sink, report)
         }
     });
     let mut src = std::io::Cursor::new(data.clone());
-    push_from_reader(addr, "exact", fast_cfg(512, 1), &mut src, 1024, &cancel, &mut |_| {}).await.unwrap();
+    push_from_reader(addr, "exact", fast_cfg(512, 1), &mut src, 1024, &cancel, &mut |_, _| {}).await.unwrap();
     let (sink, report) = server.await.unwrap();
     assert_eq!(sink, data);
     assert_eq!(report.bytes, 1024);
@@ -282,11 +282,11 @@ async fn block_number_wraps_at_65535() {
         async move {
             let (req, from) = recv_request(&main).await;
             let mut src = std::io::Cursor::new(data);
-            serve_read(from, req, &mut src, (blocks * 8) as u64, &ServerLimits::default(), &cancel, &mut |_| {}).await
+            serve_read(from, req, &mut src, (blocks * 8) as u64, &ServerLimits::default(), &cancel, &mut |_, _| {}).await
         }
     });
     let mut sink = Vec::new();
-    let report = fetch_to_writer(addr, "wrap", fast_cfg(8, 16), &mut sink, &cancel, &mut |_| {}).await.unwrap();
+    let report = fetch_to_writer(addr, "wrap", fast_cfg(8, 16), &mut sink, &cancel, &mut |_, _| {}).await.unwrap();
     assert_eq!(sink.len(), blocks * 8);
     assert_eq!(sink, data);
     assert_eq!(report.bytes, (blocks * 8) as u64);
@@ -303,6 +303,6 @@ async fn dead_peer_times_out() {
     drop(probe);
     let mut sink = Vec::new();
     let cfg = ClientConfig { block_size: 512, window_size: 1, timeout_ms: 100, retries: 2 };
-    let e = fetch_to_writer(addr, "x", cfg, &mut sink, &cancel, &mut |_| {}).await.unwrap_err();
+    let e = fetch_to_writer(addr, "x", cfg, &mut sink, &cancel, &mut |_, _| {}).await.unwrap_err();
     assert!(matches!(e, TftpError::Timeout { .. }));
 }

@@ -104,9 +104,10 @@ async fn read_chunk(reader: &mut (impl AsyncRead + Unpin), size: usize) -> std::
 pub(crate) async fn send_data(
     sess: &mut Session,
     opts: &Options,
+    total_hint: Option<u64>,
     reader: &mut (impl AsyncRead + Unpin),
     cancel: &CancellationToken,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 ) -> Result<u64, TftpError> {
     let blksize = opts.blksize as usize;
     let window = opts.windowsize.max(1) as usize;
@@ -139,7 +140,7 @@ pub(crate) async fn send_data(
             }
             sess.send(&Packet::Data { block: next_block, data: chunk.clone() }).await?;
             total += chunk.len() as u64;
-            progress(total);
+            progress(total, total_hint);
             inflight.push_back((next_block, chunk));
             next_block = next_block.wrapping_add(1);
         }
@@ -192,10 +193,11 @@ pub(crate) async fn recv_data(
     mut pending: Option<Packet>,
     sink: &mut (impl AsyncWrite + Unpin),
     cancel: &CancellationToken,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 ) -> Result<u64, TftpError> {
     let blksize = opts.blksize as usize;
     let window = opts.windowsize.max(1) as usize;
+    let total_hint = opts.tsize; // fetch: OACK tsize；serve_write: WRQ 声明回显
     let mut expected: u16 = 1;
     let mut last_acked: u16 = 0;
     let mut since_ack = 0usize;
@@ -233,7 +235,7 @@ pub(crate) async fn recv_data(
                     let is_final = data.len() < blksize;
                     sink.write_all(&data).await?;
                     total += data.len() as u64;
-                    progress(total);
+                    progress(total, total_hint);
                     last_acked = block;
                     expected = block.wrapping_add(1);
                     attempts = opts.retries.max(1);

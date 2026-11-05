@@ -175,13 +175,12 @@ pub struct TransferParams {
     pub idempotency_key: Option<String>,
 }
 
-/// wait:false 时 fetch/push 的立即响应。
+/// task.cancel 的结果。
 #[derive(Debug, Clone, Serialize)]
-pub struct TaskStarted {
-    pub task_id: String,
-    pub state: TaskState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cached: Option<bool>,
+pub struct CancelResult {
+    #[serde(flatten)]
+    pub result: TransferResult,
+    pub already_terminal: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]

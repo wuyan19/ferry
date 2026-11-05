@@ -14,6 +14,7 @@ use crate::error::FerryError;
 use crate::event::Event;
 use crate::params::*;
 use crate::sandbox::{Sandbox, SharedSandbox};
+use crate::task::TaskManager;
 
 pub struct ApiConfig {
     pub sandbox_root: PathBuf,
@@ -27,7 +28,7 @@ pub(crate) struct ApiInner {
     shutdown: CancellationToken,
     started: Instant,
     pub(crate) max_concurrent_tasks: usize,
-    // M2: tasks: TaskManager
+    pub(crate) tasks: TaskManager,
     // M3: listeners: ListenerManager
 }
 
@@ -37,20 +38,44 @@ pub struct Api(Arc<ApiInner>);
 impl Api {
     /// 初始化失败（沙箱根不可创建等）返回 io::Error，main 走启动失败路径：
     /// stderr + 非零退出、不写 stdout（protocol.md §1）。
+    /// 必须在 tokio 运行时内调用（内部启动清扫任务）。
     pub fn new(cfg: ApiConfig) -> std::io::Result<Self> {
         let sandbox = Arc::new(Sandbox::new(cfg.sandbox_root, cfg.quota_bytes)?);
         let (events, _) = broadcast::channel(256);
-        Ok(Self(Arc::new(ApiInner {
+        let tasks = TaskManager::new(cfg.max_concurrent_tasks, events.clone());
+        let api = Self(Arc::new(ApiInner {
             sandbox,
             events,
             shutdown: CancellationToken::new(),
             started: Instant::now(),
             max_concurrent_tasks: cfg.max_concurrent_tasks,
-        })))
+            tasks,
+        }));
+        api.start_sweeper();
+        Ok(api)
+    }
+
+    /// 周期清扫过期终态任务与幂等条目（TERMINAL_TTL，60s 周期）。
+    fn start_sweeper(&self) {
+        let api = self.clone();
+        let shutdown = self.0.shutdown.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                tokio::select! {
+                    _ = shutdown.cancelled() => break,
+                    _ = tick.tick() => api.0.tasks.sweep().await,
+                }
+            }
+        });
     }
 
     pub fn sandbox(&self) -> &Sandbox {
         &self.0.sandbox
+    }
+
+    pub(crate) fn tasks(&self) -> &TaskManager {
+        &self.0.tasks
     }
 
     pub fn max_concurrent_tasks(&self) -> usize {
@@ -95,6 +120,57 @@ impl Api {
         crate::file_ops::delete(&self.0.sandbox, p)
     }
 
+    // ---------- transfer.* / task.* ----------
+
+    pub async fn transfer_fetch(&self, p: TransferParams) -> Result<crate::transfer::TransferStart, FerryError> {
+        self.transfer_start(crate::transfer::Direction::Fetch, p).await
+    }
+
+    pub async fn transfer_push(&self, p: TransferParams) -> Result<crate::transfer::TransferStart, FerryError> {
+        self.transfer_start(crate::transfer::Direction::Push, p).await
+    }
+
+    /// 等待任务终态（timeout None = 无限等待），超时返回当前快照。
+    pub async fn task_wait_raw(
+        &self,
+        task_id: &str,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<TransferResult, FerryError> {
+        let task = self
+            .0
+            .tasks
+            .get(task_id)
+            .await
+            .ok_or_else(|| FerryError::task_not_found(task_id))?;
+        Ok(TaskManager::wait_terminal(&task, timeout).await)
+    }
+
+    pub async fn task_status(&self, p: TaskStatusParams) -> Result<TransferResult, FerryError> {
+        let task = self
+            .0
+            .tasks
+            .get(&p.task_id)
+            .await
+            .ok_or_else(|| FerryError::task_not_found(&p.task_id))?;
+        Ok(task.snapshot())
+    }
+
+    pub async fn task_wait(&self, p: TaskWaitParams) -> Result<TransferResult, FerryError> {
+        let timeout = match p.timeout_ms {
+            None | Some(0) => None,
+            Some(ms) => Some(std::time::Duration::from_millis(ms)),
+        };
+        self.task_wait_raw(&p.task_id, timeout).await
+    }
+
+    pub async fn task_cancel(
+        &self,
+        p: TaskCancelParams,
+    ) -> Result<crate::params::CancelResult, FerryError> {
+        let (result, already_terminal) = self.0.tasks.cancel(&p.task_id).await?;
+        Ok(crate::params::CancelResult { result, already_terminal })
+    }
+
     // ---------- server.* ----------
 
     pub async fn server_status(&self) -> Result<ServerStatusResult, FerryError> {
@@ -106,7 +182,7 @@ impl Api {
                 quota_bytes: self.0.sandbox.quota_bytes(),
             },
             listeners: Vec::new(), // M3
-            active_tasks: Vec::new(), // M2
+            active_tasks: self.0.tasks.active_ids().await,
         })
     }
 

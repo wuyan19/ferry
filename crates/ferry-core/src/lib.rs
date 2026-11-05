@@ -7,6 +7,8 @@ pub mod event;
 pub mod file_ops;
 pub mod params;
 pub mod sandbox;
+pub mod task;
+pub mod transfer;
 
 pub use api::{Api, ApiConfig};
 pub use error::{ErrCode, FerryError};

@@ -81,13 +81,13 @@ pub async fn serve_read(
     file_len: u64,
     limits: &ServerLimits,
     cancel: &CancellationToken,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 ) -> Result<TransferReport, TftpError> {
     let mut sess = Session::bind_ephemeral(peer).await?;
     sess.lock_peer(peer);
     check_mode(&mut sess, &req).await?;
     let opts = server_handshake(&mut sess, &req, limits, ServerTsize::Read { file_len }, false).await?;
-    let bytes = send_data(&mut sess, &opts, source, cancel, progress).await?;
+    let bytes = send_data(&mut sess, &opts, Some(file_len), source, cancel, progress).await?;
     Ok(TransferReport { bytes, total_bytes: Some(file_len) })
 }
 
@@ -99,7 +99,7 @@ pub async fn serve_write(
     sink: &mut (impl AsyncWrite + Unpin),
     limits: &ServerLimits,
     cancel: &CancellationToken,
-    progress: &mut (dyn FnMut(u64) + Send),
+    progress: &mut (dyn FnMut(u64, Option<u64>) + Send),
 ) -> Result<TransferReport, TftpError> {
     let mut sess = Session::bind_ephemeral(peer).await?;
     sess.lock_peer(peer);
