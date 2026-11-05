@@ -49,7 +49,8 @@ if ($actual -ne $expected) {
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not (@($userPath -split ';') -contains $BinDir)) {
   [Environment]::SetEnvironmentVariable('Path', "$userPath;$BinDir", 'User')
-  Write-Host "note: added $BinDir to user PATH (new terminals only)"
+  Write-Host "note: added $BinDir to user PATH"
+  Write-Host "use in this terminal ->  `\$env:Path += ';$BinDir'"
 }
 
 & $dst --version

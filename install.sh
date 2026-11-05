@@ -85,9 +85,28 @@ else
   chmod 0755 "$BIN_DIR/ferry"
 fi
 
-case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *) echo "note: add to PATH ->  export PATH=\"\$PATH:$BIN_DIR\"" ;;
-esac
+# PATH 配置：自动写入 shell 配置文件（幂等，重跑不重复）。
+# 与 rustup/deno 同法：新开终端即可用；当前会话需手动 export（管道安装改不了父 shell）。
+# FERRY_NO_PATH_MOD=1 跳过（CI/容器等不想动 rc 的场景）。
+in_path=0
+case ":$PATH:" in *":$BIN_DIR:"*) in_path=1 ;; esac
+if [ "$in_path" = "0" ] && [ "${FERRY_NO_PATH_MOD:-0}" != "1" ]; then
+  line="export PATH=\"\$PATH:$BIN_DIR\""
+  touched=""
+  add_line() {
+    grep "$BIN_DIR" "$1" >/dev/null 2>&1 && return 0
+    { printf '\n# added by ferry installer\n%s\n' "$line"; } >> "$1"
+    touched="$touched $1"
+  }
+  case "$(basename "${SHELL:-/bin/sh}")" in
+    bash) add_line "$HOME/.bashrc"; add_line "$HOME/.profile" ;;
+    zsh)  add_line "$HOME/.zshrc" ;;
+    fish) touched="(fish: add $BIN_DIR to fish_user_paths manually)" ;;
+    *)    add_line "$HOME/.profile" ;;
+  esac
+  [ -n "$touched" ] && echo "PATH configured in:$touched (new terminals)"
+  echo "use now ->  export PATH=\"\$PATH:$BIN_DIR\""
+fi
+
 "$BIN_DIR/ferry" --version
 echo "installed: $BIN_DIR/ferry ($asset)"
