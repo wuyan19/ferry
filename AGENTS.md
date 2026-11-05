@@ -32,5 +32,5 @@ cargo clippy --workspace --all-targets   # 零警告是硬标准
 
 ## 环境相关的坑
 
-- Windows 本地交叉 musl 需 `--config 'target.<t>.linker="rust-lld"'`（无 cc）；CI 的 ubuntu runner 不需要。
+- musl 交叉链接已固定 rust-lld（`.cargo/config.toml`）——宿主 cc 无法链接异构 ELF；任何平台直接 `cargo build --release --target <t>`。
 - 发布流程：推 `v*` tag（必须等于 workspace version），工作流跑测试闸门→版本守卫→5 目标构建（含 musl 静态）→草稿 release 待人工核对。
