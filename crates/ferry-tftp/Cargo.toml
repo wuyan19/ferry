@@ -1,0 +1,13 @@
+[package]
+name = "ferry-tftp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TFTP wire-protocol engine (client + server sessions, RFC 2347 options) used by ferry"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }

@@ -1,0 +1,21 @@
+[package]
+name = "ferry-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ferry 核心：沙箱、文件操作、任务管理、监听器与错误模型（前端无关）"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+schemars = { workspace = true }
+ipnet = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

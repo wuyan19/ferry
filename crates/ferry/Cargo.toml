@@ -1,0 +1,26 @@
+[package]
+name = "ferry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Agent-oriented file transfer tool (TFTP first) speaking JSON-RPC/NDJSON or MCP over stdio"
+
+[[bin]]
+name = "ferry"
+path = "src/main.rs"
+
+[dependencies]
+ferry-core = { path = "../ferry-core" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
