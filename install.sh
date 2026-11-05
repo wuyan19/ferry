@@ -31,11 +31,11 @@ case "$os" in
   *) die "unsupported OS: $os" ;;
 esac
 
-fetch() { # fetch URL DEST
+fetch() { # fetch URL DEST —— 连接超时快速失败，受限网络不至于挂死
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$1" -o "$2"
+    curl -fsSL --connect-timeout 10 --retry 2 "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$2" "$1"
+    wget -q -T 10 -O "$2" "$1"
   else
     die "neither curl nor wget found"
   fi
@@ -44,8 +44,8 @@ fetch() { # fetch URL DEST
 # 版本解析：跟随 releases/latest 的 302 重定向取 tag（免 GitHub API，无限流）
 if [ -z "$VERSION" ]; then
   if command -v curl >/dev/null 2>&1; then
-    final=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-      "${MIRROR}https://github.com/$REPO/releases/latest") || die "cannot reach github.com"
+    final=$(curl -fsSL --connect-timeout 10 -o /dev/null -w '%{url_effective}' \
+      "${MIRROR}https://github.com/$REPO/releases/latest") || die "cannot reach github.com (try FERRY_MIRROR=https://ghproxy.net/)"
     VERSION=${final##*/tag/}
   else
     VERSION=$(wget -qO- "${MIRROR}https://api.github.com/repos/$REPO/releases/latest" \
