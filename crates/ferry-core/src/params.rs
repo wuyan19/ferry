@@ -203,7 +203,10 @@ pub struct TaskCancelParams {
 
 // ---------- listener ----------
 
+// `inline`：嵌套结构的 schema 内联展开——部分 MCP 客户端不解析
+// inputSchema 里的 $defs/$ref（会把字段当 string 处理）。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, schemars::JsonSchema)]
+#[schemars(inline)]
 pub struct ListenerAllow {
     /// Serve device RRQ (download) requests.
     #[serde(default)]
