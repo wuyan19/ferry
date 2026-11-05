@@ -81,7 +81,11 @@ impl ErrCode {
     pub fn default_retryable(self) -> bool {
         matches!(
             self,
-            Self::InternalError | Self::RemoteTimeout | Self::NetworkUnreachable
+            Self::InternalError
+                | Self::RemoteTimeout
+                | Self::NetworkUnreachable
+                | Self::QuotaExceeded // 清理后（§6 表）
+                | Self::PortInUse     // 换端口（§6 表）
         )
     }
 }
