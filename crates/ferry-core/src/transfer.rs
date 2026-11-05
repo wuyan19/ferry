@@ -234,7 +234,7 @@ fn network_unreachable(host: &str, reason: &str) -> FerryError {
 }
 
 /// 进度节流状态（≥1s 或 ≥256KiB 才发事件）。
-struct Throttle {
+pub(crate) struct Throttle {
     api: Api,
     task_id: String,
     last_at: Instant,
@@ -242,7 +242,7 @@ struct Throttle {
 }
 
 impl Throttle {
-    fn new(api: Api, task_id: &str) -> Self {
+    pub(crate) fn new(api: Api, task_id: &str) -> Self {
         Self {
             api,
             task_id: task_id.to_string(),
@@ -251,7 +251,7 @@ impl Throttle {
         }
     }
 
-    fn on_progress(&mut self, bytes: u64, total: Option<u64>) {
+    pub(crate) fn on_progress(&mut self, bytes: u64, total: Option<u64>) {
         let now = Instant::now();
         if now - self.last_at < PROGRESS_MIN_INTERVAL && bytes - self.last_bytes < PROGRESS_MIN_DELTA
         {
@@ -362,7 +362,7 @@ async fn run_push(
 }
 
 /// 引擎错误 → (终态, 任务层错误)。Cancelled → Aborted/None。
-fn map_engine_error(e: TftpError) -> (TaskState, Option<FerryError>) {
+pub(crate) fn map_engine_error(e: TftpError) -> (TaskState, Option<FerryError>) {
     let ferr = match e {
         TftpError::Cancelled => return (TaskState::Aborted, None),
         TftpError::Timeout { retries } => FerryError::new(
@@ -401,7 +401,7 @@ fn map_engine_error(e: TftpError) -> (TaskState, Option<FerryError>) {
 
 /// 写入侧：更新 sha256、超配额即报 StorageFull（临时文件占用不计入 used，
 /// 成功 rename 后才入账，因此超限只需中断写入）。
-struct HashingSink {
+pub(crate) struct HashingSink {
     inner: tokio::fs::File,
     hasher: Sha256,
     written: u64,
@@ -409,12 +409,17 @@ struct HashingSink {
 }
 
 impl HashingSink {
-    fn new(inner: tokio::fs::File, remaining: u64) -> Self {
+    pub(crate) fn new(inner: tokio::fs::File, remaining: u64) -> Self {
         Self { inner, hasher: Sha256::new(), written: 0, remaining }
     }
 
-    fn sha256_hex(&mut self) -> String {
+    pub(crate) fn sha256_hex(&mut self) -> String {
         self.hasher.clone().finalize().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// 落盘同步（rename 前调用）。
+    pub(crate) async fn sync(&self) -> std::io::Result<()> {
+        self.inner.sync_all().await
     }
 }
 
@@ -451,7 +456,7 @@ impl AsyncWrite for HashingSink {
 }
 
 /// 读取侧：推送时对流经内容计算 sha256。
-struct HashingReader {
+pub(crate) struct HashingReader {
     inner: tokio::fs::File,
     hasher: Sha256,
     #[allow(dead_code)]

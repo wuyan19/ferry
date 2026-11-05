@@ -29,7 +29,7 @@ pub(crate) struct ApiInner {
     started: Instant,
     pub(crate) max_concurrent_tasks: usize,
     pub(crate) tasks: TaskManager,
-    // M3: listeners: ListenerManager
+    pub(crate) listeners: crate::listener::ListenerManager,
 }
 
 #[derive(Clone)]
@@ -50,6 +50,7 @@ impl Api {
             started: Instant::now(),
             max_concurrent_tasks: cfg.max_concurrent_tasks,
             tasks,
+            listeners: crate::listener::ListenerManager::new(),
         }));
         api.start_sweeper();
         Ok(api)
@@ -76,6 +77,10 @@ impl Api {
 
     pub(crate) fn tasks(&self) -> &TaskManager {
         &self.0.tasks
+    }
+
+    pub(crate) fn listeners(&self) -> &crate::listener::ListenerManager {
+        &self.0.listeners
     }
 
     pub fn max_concurrent_tasks(&self) -> usize {
@@ -181,7 +186,7 @@ impl Api {
                 used_bytes: self.0.sandbox.used_bytes(),
                 quota_bytes: self.0.sandbox.quota_bytes(),
             },
-            listeners: Vec::new(), // M3
+            listeners: self.0.listeners.infos().await,
             active_tasks: self.0.tasks.active_ids().await,
         })
     }
